@@ -1,6 +1,6 @@
 name: LandPurchasing
 main: com.m0pt0pmatt.LandPurchasing.LandPurchasing
-version: 0.75
+version: 0.76
 softdepend: [WorldEdit, WorldGuard, Vault, MenuService, BetterEconomy]
 commands:
     priceland:
@@ -55,3 +55,6 @@ commands:
     listings:
         description: Gives a book with all the available plots listed
         usage: /listings
+    landhelp:
+        description: Gives a book with help about using land commands
+        usage: /landhelp

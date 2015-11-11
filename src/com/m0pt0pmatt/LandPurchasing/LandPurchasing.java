@@ -4,8 +4,6 @@ import java.io.File;
 import java.io.IOException;
 import java.util.UUID;
 
-import net.milkbowl.vault.economy.Economy;
-
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.Location;
@@ -18,7 +16,6 @@ import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.BookMeta;
 import org.bukkit.plugin.Plugin;
-import org.bukkit.plugin.RegisteredServiceProvider;
 import org.bukkit.plugin.ServicePriority;
 import org.bukkit.plugin.java.JavaPlugin;
 
@@ -28,21 +25,23 @@ import com.m0pt0pmatt.LandPurchasing.managers.FlagManager;
 import com.m0pt0pmatt.LandPurchasing.managers.LandManager;
 import com.m0pt0pmatt.LandPurchasing.managers.LandService;
 import com.m0pt0pmatt.LandPurchasing.managers.LandServiceProvider;
+import com.m0pt0pmatt.LandPurchasing.utils.HelpBook;
+import com.m0pt0pmatt.bettereconomy.BetterEconomy;
+import com.m0pt0pmatt.bettereconomy.EconomyManager;
 import com.sk89q.worldedit.BlockVector;
 import com.sk89q.worldedit.bukkit.WorldEditPlugin;
 import com.sk89q.worldguard.bukkit.BukkitPlayer;
 import com.sk89q.worldguard.bukkit.WorldGuardPlugin;
 import com.sk89q.worldguard.protection.ApplicableRegionSet;
-import com.sk89q.worldguard.protection.managers.RegionManager;
 import com.sk89q.worldguard.protection.regions.ProtectedRegion;
 
 /**
  * LandPurchasing is a plugin which allows players to purchase custom plots of protected land
  * LandPurchasing uses WorldGuard as its backend.
  * 
- * @author Matthew Broomfield, Lucas Stuyvesant, and Skyler Manzanares
+ * @author Matthew Broomfield, Lucas Stuyvesant, Skyler Manzanares, and James Pelster
  */
-public class LandPurchasing extends JavaPlugin{
+public class LandPurchasing extends JavaPlugin {
 
 	/**
 	 * The LandManager performs creation, deletion, and permission operations on
@@ -63,7 +62,7 @@ public class LandPurchasing extends JavaPlugin{
 	/**
 	 * The Vault Economy
 	 */
-	public static Economy economy = null;
+	public static EconomyManager economy = null;
 	
 	/**
 	 * The WorldGuard hook
@@ -83,7 +82,7 @@ public class LandPurchasing extends JavaPlugin{
 	
 	private static YamlConfiguration config;
 	
-	private static final double version = 1.23;
+	private static final double version = 0.76;
 	
 	/**
 	 * Load up configuration
@@ -102,7 +101,7 @@ public class LandPurchasing extends JavaPlugin{
 			config = new YamlConfiguration();
 			config.set("version", LandPurchasing.version);
 			
-			//creat empty plot section
+			//create empty plot section
 			config.createSection("LeasePlots");
 			
 			return;
@@ -130,11 +129,15 @@ public class LandPurchasing extends JavaPlugin{
 	/**
 	 * Hook into other plugins
 	 */
-	public void onEnable(){
+	public void onEnable() {
 		plugin = this;
 		weplugin = getWorldEdit();
 		wgplugin = getWorldGuard();
-		setupEconomy();
+		if (setupEconomy() == false) {
+			getLogger().info("Unable to hook BetterEconomy yet, will try waiting for an EconomyLoadEvent.");
+		} else {
+			getLogger().info("Successfully hooked into BetterEconomy!");
+		}
 		
 		//set up the landmanager
 		landManager = new LandManager(this, wgplugin);
@@ -143,7 +146,7 @@ public class LandPurchasing extends JavaPlugin{
 		flagManager = new FlagManager();
 		
 		//set up land listener
-		landListener = new LandListener();
+		landListener = new LandListener(this);
 		Bukkit.getPluginManager().registerEvents(landListener, this);
 				
 		//setup land service
@@ -201,7 +204,7 @@ public class LandPurchasing extends JavaPlugin{
 		//remove all leased plot locations, so we can recreate them on next enable and not
 		//create overlapping regions!
 		
-		RegionManager rm = wgplugin.getRegionManager(Bukkit.getWorld("Homeworld"));
+//		RegionManager rm = wgplugin.getRegionManager(Bukkit.getWorld("Homeworld"));
 		
 		//save out config!
 		getLogger().info("Saving plot information...");
@@ -235,6 +238,7 @@ public class LandPurchasing extends JavaPlugin{
 	    
 	    // WorldGuard may not be loaded
 	    if (plugin == null || !(plugin instanceof WorldGuardPlugin)) {
+	    	Bukkit.getLogger().warning("LandPurchasing failed to hook into WorldGuard plugin!");
 	    	return null; // Maybe you want throw an exception instead
 	    }
 	    
@@ -250,6 +254,7 @@ public class LandPurchasing extends JavaPlugin{
 	 
 	    // WorldGuard may not be loaded
 	    if (plugin == null || !(plugin instanceof WorldEditPlugin)) {
+	    	Bukkit.getLogger().warning("LandPurchasing failed to hook into WorldEdit plugin!");
 	        return null; // Maybe you want throw an exception instead
 	    }
 	 
@@ -262,12 +267,12 @@ public class LandPurchasing extends JavaPlugin{
 	 */
 	public static boolean setupEconomy()
     {
-        RegisteredServiceProvider<Economy> economyProvider = Bukkit.getServer().getServicesManager().getRegistration(net.milkbowl.vault.economy.Economy.class);
-        if (economyProvider != null) {
-            economy = economyProvider.getProvider();
-        }
-
-        return (economy != null);
+		if (Bukkit.getPluginManager().isPluginEnabled("BetterEconomy")) {
+			economy = BetterEconomy.economy;
+			return true;
+		}
+		else
+			return false;
     }
 	
 	/**
@@ -468,6 +473,16 @@ public class LandPurchasing extends JavaPlugin{
 			return true;
 		}
 		
+		if (cmd.getName().equalsIgnoreCase(LandCommand.LANDHELP.getCommand())) {
+			if (!(sender instanceof Player)) {
+				sender.sendMessage("You must be a player to use this command.");
+				return true;
+			}
+			
+			HelpBook.givePlayerBook((Player) sender);
+			return true;
+		}
+		
 		/**
 		 * player wants to change the flags on their land
 		 */
@@ -478,8 +493,10 @@ public class LandPurchasing extends JavaPlugin{
 					sender.sendMessage("Use any one of these flags with flagland:");
 					//To avoid spam, we construct one big string
 					String msg = " ";
+					boolean trig = false;
 					for (String flag : flagManager.getFlags()) {
-						msg = msg + flag + "   ";
+						msg = (trig ? ChatColor.YELLOW : ChatColor.GOLD)
+								+ msg + flag + "   ";
 					}
 					sender.sendMessage(msg);
 					return true;
